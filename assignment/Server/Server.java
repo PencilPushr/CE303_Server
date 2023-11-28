@@ -43,6 +43,8 @@ public class Server {
         this.port = port;
         this.orderToClientMap = new HashMap<>();
         this.waitingArea = new LinkedBlockingQueue<>();
+        // The main idea is that I just generate a separate thread for each tea and coffee, there's probably a smarter
+        // way to do this, but I am not a smarter person.
         this.brewingArea = Executors.newFixedThreadPool(4); // 2 for tea, 2 for coffee
         this.trayArea = new LinkedBlockingQueue<>();
         this.numClients = new AtomicInteger(0);
@@ -57,7 +59,8 @@ public class Server {
                 Socket clientSocket = serverSocket.accept();
                 numClients.incrementAndGet();
                 new Thread(
-                        () -> handleClient(clientSocket)
+                        //https://stackoverflow.com/questions/27524445/does-a-lambda-expression-create-an-object-on-the-heap-every-time-its-executed
+                        () -> handleClient(clientSocket) // spawn new thread that calls this function, see stack overflow post above
                 ).start();
             }
         } catch (IOException e) {
@@ -108,15 +111,19 @@ public class Server {
     }
 
     boolean processRequest(String request){
+        // Can't do switch because can't use the .equals() func
         if ("exit".equalsIgnoreCase(request)) {
             // Close the client connection gracefully
             return true;
         }
-        if ("order")
+        if ("order".equalsIgnoreCase(request)) {
+
+        }
         return false;
     }
 
     public static Order parseOrderString(String orderString) throws IllegalArgumentException {
+        // Split the input string into an array of words.
         String[] tokens = orderString.split("\\s+");
 
         // token length must be at a minimum "order status" hence cannot be less than 2
@@ -127,6 +134,7 @@ public class Server {
         int teaCount = 0;
         int coffeeCount = 0;
 
+        // We just read in order, so now start at the 2nd element or [1]
         for (int i = 1; i < tokens.length; i += 2) {
             int quantity;
             try {
@@ -135,6 +143,7 @@ public class Server {
                 throw new IllegalArgumentException("Invalid quantity format");
             }
 
+            // check the 3rd element of the array (to check the drink type)
             if (i + 1 < tokens.length) {
                 String drink = tokens[i + 1].toLowerCase();
 
