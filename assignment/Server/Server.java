@@ -12,15 +12,18 @@ import java.net.Socket;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
-import java.util.Base64;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
+
+enum customerStatus {
+    IDLE,
+    WAITING,
+    DEFAULT //this also doubles as an error
+}
 
 // Server class
 public class Server {
@@ -114,10 +117,11 @@ public class Server {
         String[] tokens = request.split("\\s+");
 
         // Can't do switch because can't use the .equals() func
-        if ("exit".equalsIgnoreCase(request) || tokens[0].equalsIgnoreCase("exit")) {
+        if ("exit".equalsIgnoreCase(request) || (tokens[0].equalsIgnoreCase("exit") && (tokens.length == 1))) {
             // Close the client connection by exiting the while loop and call closeClient();
             return true;
         }
+        // Check this case first cuz otherwise it's gonna be a pain trying to add more conditions to parseOrderString();
         if ("order status".equalsIgnoreCase(request)) {
             returnOrderStatusToClient(writer);
             return false;
@@ -141,20 +145,14 @@ public class Server {
 
     }
 
-    public static Order parseOrderString(String orderString) throws IllegalArgumentException {
-        // Split the input string into an array of words.
-        String[] tokens = orderString.split("\\s+");
-
-        // token length must be at a minimum "order status" hence cannot be less than 2
-        if (tokens.length < 2 || !tokens[0].equalsIgnoreCase("order")) {
-            throw new IllegalArgumentException("Invalid order format");
-        }
-
+    public String parseOrderString(String orderString) throws IllegalArgumentException {
+        String[] tokens = getTokens(orderString);
+        System.out.println(Arrays.toString(Arrays.stream(tokens).toArray()));
         int teaCount = 0;
         int coffeeCount = 0;
 
-        // We just read in order, so now start at the 2nd element or [1]
-        for (int i = 1; i < tokens.length; i += 2) {
+        label:
+        for (int i = 1; i < tokens.length; i+=3) {
             int quantity;
             try {
                 quantity = Integer.parseInt(tokens[i]);
@@ -162,23 +160,65 @@ public class Server {
                 throw new IllegalArgumentException("Invalid quantity format");
             }
 
-            // check the 3rd element of the array (to check the drink type)
-            if (i + 1 < tokens.length) {
-                String drink = tokens[i + 1].toLowerCase();
-
-                if (drink.contains("tea")) {
-                    teaCount += quantity;
-                } else if (drink.contains("coffee")) {
-                    coffeeCount += quantity;
-                } else {
-                    throw new IllegalArgumentException("Invalid drink type");
-                }
-            } else {
+            if (i + 1 >= tokens.length) {
                 throw new IllegalArgumentException("Incomplete order details");
+            }
+
+            String drink = tokens[i + 1].toLowerCase();
+
+            switch (drink) {
+                case "tea":
+                case "teas":
+                    teaCount += quantity;
+                    break label;
+                case "coffee":
+                case "coffees":
+                    coffeeCount += quantity;
+                    break label;
+                case "and":
+                    if (i + 2 >= tokens.length) {
+                        throw new IllegalArgumentException("Incomplete order details after 'and'");
+                    }
+                    String nextDrink = tokens[i + 2].toLowerCase();
+                    if (nextDrink.equals("tea") || nextDrink.equals("teas")) {
+                        teaCount += quantity;
+                    } else if (nextDrink.equals("coffee") || nextDrink.equals("coffees")) {
+                        coffeeCount += quantity;
+                    } else {
+                        throw new IllegalArgumentException("Invalid drink type after 'and'");
+                    }
+                    i++; // Skip the next token as it has been processed
+
+                    break label;
+                default:
+                    throw new IllegalArgumentException("Invalid drink type");
             }
         }
 
-        return new Order("Customer", teaCount, coffeeCount);
+        return Arrays.toString(tokens);
+    }
+
+    private String[] getTokens(String orderString) {
+        String[] tokens = orderString.split("\\s+");
+
+        // At most the longest order that can currently exist is "order 2 teas and 2 coffees" -> 6 words long.
+        // picked 32 cuz it can be processed in one cpu cycle
+        if (tokens.length > 32) { throw new IllegalArgumentException("Order length too long"); }
+
+        if (tokens.length < 3 || !tokens[0].equalsIgnoreCase("order")) {
+            throw new IllegalArgumentException("Invalid order format");
+        }
+
+        // Can't have more than 1 and
+        int andCounter = 0;
+        for (String token : tokens) {
+            if (Objects.equals(token, "and")) {
+                andCounter++;
+                if (andCounter > 1) throw new IllegalArgumentException("Invalid order format: Too many ands");
+            }
+        }
+
+        return tokens;
     }
 
     private boolean authenticate(BufferedReader reader, PrintWriter writer) throws IOException {
