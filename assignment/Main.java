@@ -3,6 +3,11 @@ package assignment;
 import assignment.Client.*;
 import assignment.Server.*;
 
+/*
+ *
+ * DO NOT EXECUTE THIS, THIS WAS FOR TESTING PURPOSES -> EXECUTE BARISTA AND CUSTOMER SEPARATELY!
+ *
+ */
 public class Main {
     public static void main(String[] args) {
         // Start the server in a separate thread

@@ -95,7 +95,7 @@ public class Server {
             String request;
             while ((request = reader.readLine()) != null) {
                 System.out.println("Received from client: " + request);
-                if (processRequest(request)){
+                if (processRequest(request, reader, writer)){
                     numClients.decrementAndGet();
                     return;
                 }
@@ -110,16 +110,35 @@ public class Server {
         }
     }
 
-    boolean processRequest(String request){
+    boolean processRequest(String request, BufferedReader reader, PrintWriter writer){
+        String[] tokens = request.split("\\s+");
+
         // Can't do switch because can't use the .equals() func
-        if ("exit".equalsIgnoreCase(request)) {
-            // Close the client connection gracefully
+        if ("exit".equalsIgnoreCase(request) || tokens[0].equalsIgnoreCase("exit")) {
+            // Close the client connection by exiting the while loop and call closeClient();
             return true;
         }
-        if ("order".equalsIgnoreCase(request)) {
-
+        if ("order status".equalsIgnoreCase(request)) {
+            returnOrderStatusToClient(writer);
+            return false;
+        }
+        if (tokens[0].equalsIgnoreCase("order")) {
+            parseOrderString(request);
+            return false;
         }
         return false;
+    }
+
+    public void returnOrderStatusToClient(PrintWriter writer) {
+        String orderStatus = new String();
+        writer.println(orderStatus);
+    }
+
+    /*
+     * Goal of the function is that if a client exits for whatever reason
+     */
+    void checkAndPassOrdersToOtherClients() {
+
     }
 
     public static Order parseOrderString(String orderString) throws IllegalArgumentException {
@@ -217,5 +236,9 @@ public class Server {
         } catch (IOException e) {
             e.printStackTrace();
         }
+
+        // Once the client has successfully exited
+        // Attempt to pass on any orders
+        checkAndPassOrdersToOtherClients();
     }
 }

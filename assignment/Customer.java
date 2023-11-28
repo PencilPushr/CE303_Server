@@ -9,7 +9,7 @@ public class Customer {
         // https://stackoverflow.com/questions/2975248/how-to-handle-a-sigterm
         Runtime.getRuntime().addShutdownHook(new Thread(
                 () -> {
-                    System.out.println("Shutting down gracefully...");
+                    System.out.println("Error Encountered: terminating connection");
                     client.closeClient();
                 })
         );
