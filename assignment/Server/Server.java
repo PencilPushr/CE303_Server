@@ -1,6 +1,5 @@
 package assignment.Server;
 
-import assignment.Client.Client;
 import assignment.Common.*;
 
 import java.io.BufferedReader;
@@ -11,19 +10,11 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.text.SimpleDateFormat;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
-
-enum customerStatus {
-    IDLE,
-    WAITING,
-    DEFAULT //this also doubles as an error
-}
 
 // Server class
 public class Server {
@@ -33,34 +24,29 @@ public class Server {
     private static final String AUTHENTICATION_KEY = "SecretKey123";
     private static final String SALT = "RandomSalt";
 
-    private static final int TEA_PREPARATION_TIME = 30000; // 30 seconds in milliseconds
-    private static final int COFFEE_PREPARATION_TIME = 45000; // 45 seconds in milliseconds
-
     AtomicInteger numClients;
-    private Map<Order, Client> orderToClientMap;
-    private BlockingQueue<Order> waitingArea;
-    private ExecutorService brewingArea;
-    private BlockingQueue<Order> trayArea;
+    private static Brewery brewery;
+    private static ArrayList<ClientHandler> clients;
+    private OrderParser orderParser;
 
     public Server(int port) {
         this.port = port;
-        this.orderToClientMap = new HashMap<>();
-        this.waitingArea = new LinkedBlockingQueue<>();
-        // The main idea is that I just generate a separate thread for each tea and coffee, there's probably a smarter
-        // way to do this, but I am not a smarter person.
-        this.brewingArea = Executors.newFixedThreadPool(4); // 2 for tea, 2 for coffee
-        this.trayArea = new LinkedBlockingQueue<>();
+        clients = new ArrayList<>();
+        brewery = new Brewery(this::printServerStatus);
         this.numClients = new AtomicInteger(0);
+        this.orderParser = new OrderParser();
     }
 
     public void start() {
         try {
             serverSocket = new ServerSocket(port);
             System.out.println("Server started on port " + port);
+            new Thread(brewery).start();
 
             while (true) {
                 Socket clientSocket = serverSocket.accept();
                 numClients.incrementAndGet();
+                printServerStatus();
                 new Thread(
                         //https://stackoverflow.com/questions/27524445/does-a-lambda-expression-create-an-object-on-the-heap-every-time-its-executed
                         () -> handleClient(clientSocket) // spawn new thread that calls this function, see stack overflow post above
@@ -83,29 +69,27 @@ public class Server {
                 System.out.println("Authentication failed. Closing connection.");
                 return;
             }
+            writer.println("Authentication Successful");
 
-            // Request Name
-            writer.println("Please enter your name: ");
-            String nameRq = reader.readLine();
-            while (reader.readLine() != null || !Objects.equals(reader.readLine(), "\n")) {
-                // Add further safety so the person doesn't enter some escape chars
-                nameRq = reader.readLine().strip();
-            }
-            // Create ClientHandler for each seperate client.
-            ClientHandler clientHandler = new ClientHandler(nameRq, clientSocket, reader, writer);
+            // Prints what ip, port and time of client connect
+            clientConnectPrint(clientSocket);
 
-            // Process user requests
+            // Generate a new client handler to keep pointers to iostreams
+            ClientHandler handler = requestNameAndGenerateCH(clientSocket, reader, writer);
+
+            clients.add(handler);
+
+
+            // Process user requests ------------- Main Loop ---------------
             String request;
-            while ((request = reader.readLine()) != null) {
-                System.out.println("Received from client: " + request);
-                if (processRequest(request, reader, writer)){
-                    numClients.decrementAndGet();
+            while ( (request = reader.readLine()) != null) {
+                System.out.println("Received from client: " + handler.getClientName() + " -> " + request);
+                if (processRequest(request, handler)){
+                    clients.remove(handler);
                     return;
                 }
-                String response = "Server response to: " + request;
-                writer.println(response);
             }
-        } catch (IOException e) {
+        } catch (IOException | IllegalArgumentException e ) {
             e.printStackTrace();
         } finally {
             closeClient(clientSocket);
@@ -113,112 +97,94 @@ public class Server {
         }
     }
 
-    boolean processRequest(String request, BufferedReader reader, PrintWriter writer){
-        String[] tokens = request.split("\\s+");
+    void clientConnectPrint(Socket clientSocket) {
+        System.out.println("Client connected: " + clientSocket.getInetAddress()
+                + ":" + clientSocket.getLocalPort() + " conTime: " + System.currentTimeMillis());
+    }
+
+    void printServerStatus() {
+        String timeStamp = new SimpleDateFormat("dd/MM/yyyy - HH:mm:ss").format(Calendar.getInstance().getTime());
+        String str1 = "Current server status: " + timeStamp + "\n";
+        String str2 = "Clients connected: " + numClients + "\n";
+        String str3 = "Current customers waiting: " + brewery.getOrderQueueLength() + "\n";
+        String str4 = "(Tea:Coffee) in waiting area: " + brewery.numTeasWaiting.get() + ":" + brewery.numCoffeesWaiting.get() + "\n" +
+                    " brewing area: " + brewery.numTeasBrewing.get() + ":" + brewery.numCoffeesBrewing.get() + "\n" +
+                    " tray area: " + brewery.numTeasTray.get() + ":" + brewery.numCoffeesTray.get() + "\n";
+        System.out.println(str1 + str2 + str3 + str4);
+    }
+
+    ClientHandler requestNameAndGenerateCH(Socket clientSocket, BufferedReader stdin, PrintWriter stdout) throws IOException {
+        // Request Name
+        stdout.println("Please enter your name: ");
+
+        String nameRq = null;
+        while (nameRq == null || nameRq.trim().isEmpty() || nameRq.trim().equals("\n")) {
+            // Read the input line
+            nameRq = stdin.readLine();
+
+            // Check if the input is null, empty, or contains only a newline character
+            if (nameRq == null || nameRq.trim().isEmpty() || nameRq.trim().equals("\n")) {
+                stdout.println("Invalid input. Please enter a non-empty name: ");
+            }
+        }
+        stdout.println("Welcome " + nameRq + " please type menu to get options");
+        // Create ClientHandler for each separate client.
+        return new ClientHandler(nameRq.strip(), clientSocket, stdin, stdout, customerStatus.IDLE);
+    }
+
+    boolean processRequest(String request, ClientHandler clientHandler) throws IllegalArgumentException{
+
+        String[] tokens = orderParser.getTokens(request);
 
         // Can't do switch because can't use the .equals() func
         if ("exit".equalsIgnoreCase(request) || (tokens[0].equalsIgnoreCase("exit") && (tokens.length == 1))) {
             // Close the client connection by exiting the while loop and call closeClient();
             return true;
         }
+        if ("menu".equalsIgnoreCase(request) || (tokens[0].equalsIgnoreCase("menu") && (tokens.length == 1))) {
+            printMenuToClient(clientHandler);
+            return false;
+        }
         // Check this case first cuz otherwise it's gonna be a pain trying to add more conditions to parseOrderString();
-        if ("order status".equalsIgnoreCase(request)) {
-            returnOrderStatusToClient(writer);
+        if ("order status".equalsIgnoreCase(request) && (tokens.length == 2)) {
+            returnOrderStatusToClient(clientHandler.getWriter());
             return false;
         }
         if (tokens[0].equalsIgnoreCase("order")) {
-            parseOrderString(request);
+            try {
+                Order order = orderParser.parseOrderString(tokens, clientHandler.getClientName());
+                brewery.addOrder(clientHandler, order);
+            } catch (IllegalArgumentException e){
+                e.printStackTrace();
+            }
             return false;
         }
         return false;
     }
 
+    private void printMenuToClient(ClientHandler clientHandler) {
+        String str1 = "'exit' exits the current connection to the server\n" +
+                "'menu' gives you menu of commands\n" +
+                "'order status' gives you the current status on your drinks\n" +
+                "you can issue any order via the following: order x tea(s)/coffee(s) [and y coffee(s)/tea(s)]";
+        clientHandler.sendToClient(str1);
+    }
+
     public void returnOrderStatusToClient(PrintWriter writer) {
-        String orderStatus = new String();
+        String orderStatus = new String(" Placeholder ");
         writer.println(orderStatus);
     }
 
     /*
-     * Goal of the function is that if a client exits for whatever reason
+     * Goal of the function is that if a client exits for whatever reason we give anyone waiting for an order of the same
+     * quantity or break it up.
      */
     void checkAndPassOrdersToOtherClients() {
 
     }
 
-    public String parseOrderString(String orderString) throws IllegalArgumentException {
-        String[] tokens = getTokens(orderString);
-        System.out.println(Arrays.toString(Arrays.stream(tokens).toArray()));
-        int teaCount = 0;
-        int coffeeCount = 0;
+    void throwAwayOrders() {
 
-        label:
-        for (int i = 1; i < tokens.length; i+=3) {
-            int quantity;
-            try {
-                quantity = Integer.parseInt(tokens[i]);
-            } catch (NumberFormatException e) {
-                throw new IllegalArgumentException("Invalid quantity format");
-            }
-
-            if (i + 1 >= tokens.length) {
-                throw new IllegalArgumentException("Incomplete order details");
-            }
-
-            String drink = tokens[i + 1].toLowerCase();
-
-            switch (drink) {
-                case "tea":
-                case "teas":
-                    teaCount += quantity;
-                    break label;
-                case "coffee":
-                case "coffees":
-                    coffeeCount += quantity;
-                    break label;
-                case "and":
-                    if (i + 2 >= tokens.length) {
-                        throw new IllegalArgumentException("Incomplete order details after 'and'");
-                    }
-                    String nextDrink = tokens[i + 2].toLowerCase();
-                    if (nextDrink.equals("tea") || nextDrink.equals("teas")) {
-                        teaCount += quantity;
-                    } else if (nextDrink.equals("coffee") || nextDrink.equals("coffees")) {
-                        coffeeCount += quantity;
-                    } else {
-                        throw new IllegalArgumentException("Invalid drink type after 'and'");
-                    }
-                    i++; // Skip the next token as it has been processed
-
-                    break label;
-                default:
-                    throw new IllegalArgumentException("Invalid drink type");
-            }
-        }
-
-        return Arrays.toString(tokens);
-    }
-
-    private String[] getTokens(String orderString) {
-        String[] tokens = orderString.split("\\s+");
-
-        // At most the longest order that can currently exist is "order 2 teas and 2 coffees" -> 6 words long.
-        // picked 32 cuz it can be processed in one cpu cycle
-        if (tokens.length > 32) { throw new IllegalArgumentException("Order length too long"); }
-
-        if (tokens.length < 3 || !tokens[0].equalsIgnoreCase("order")) {
-            throw new IllegalArgumentException("Invalid order format");
-        }
-
-        // Can't have more than 1 and
-        int andCounter = 0;
-        for (String token : tokens) {
-            if (Objects.equals(token, "and")) {
-                andCounter++;
-                if (andCounter > 1) throw new IllegalArgumentException("Invalid order format: Too many ands");
-            }
-        }
-
-        return tokens;
     }
 
     private boolean authenticate(BufferedReader reader, PrintWriter writer) throws IOException {
@@ -274,6 +240,7 @@ public class Server {
                 System.out.println("Client connection closed.");
             }
         } catch (IOException e) {
+            throwAwayOrders();
             e.printStackTrace();
         }
 

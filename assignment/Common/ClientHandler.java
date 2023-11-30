@@ -1,5 +1,7 @@
 package assignment.Common;
 
+import assignment.Server.customerStatus;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -10,10 +12,15 @@ import java.net.Socket;
  * for all private member variables.
  */
 public class ClientHandler {
-    private String clientName;
-    private Socket socket;
-    private BufferedReader reader;
-    private PrintWriter writer;
+    private final String clientName;
+    private final Socket socket;
+    private final BufferedReader reader;
+    private final PrintWriter writer;
+
+    private int tea;
+    private int coffee;
+
+    private customerStatus currentStatus;
 
     /*
      * It may be considered redundant to hold both the socket and the IOstreams. HOWEVER, if the objects are already
@@ -21,11 +28,17 @@ public class ClientHandler {
      * Especially important as I am not implementing Runnable interface -> instead forking and creating a thread that runs handleClient();
      * Ultimately I am just keeping pointers to already opened IOStreams and Sockets so at most I lose 3 pointers of space.
      */
-    public ClientHandler(String clientName, Socket socket, BufferedReader reader, PrintWriter writer) {
+    public ClientHandler(String clientName, Socket socket, BufferedReader reader, PrintWriter writer, customerStatus currentStatus) {
         this.clientName = clientName;
         this.socket = socket;
         this.reader = reader;
         this.writer = writer;
+        this.currentStatus = currentStatus;
+    }
+
+    public void addOrder(Order order){
+        tea += order.getTeaCount();
+        coffee += order.getCoffeeCount();
     }
 
     public String getClientName() {
@@ -50,5 +63,21 @@ public class ClientHandler {
 
     public String receiveFromClient() throws IOException {
         return reader.readLine();
+    }
+
+    public int getTea() {
+        return tea;
+    }
+
+    public void setTea(int tea) {
+        this.tea = tea;
+    }
+
+    public int getCoffee() {
+        return coffee;
+    }
+
+    public void setCoffee(int coffee) {
+        this.coffee = coffee;
     }
 }

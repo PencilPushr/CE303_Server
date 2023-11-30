@@ -1,5 +1,7 @@
 package assignment.Client;
 
+import assignment.Server.Server;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -8,6 +10,9 @@ import java.net.Socket;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
+import java.util.Scanner;
+
+import static java.lang.System.exit;
 
 public class Client {
     // Server stuff
@@ -25,8 +30,10 @@ public class Client {
 
     //IOstreams
     private BufferedReader serverReader;
-    private PrintWriter writer;
+    private PrintWriter clientWriter;
     private BufferedReader userInput;
+    private ServerListener serverListener;
+    private Thread SLThread;
 
     public Client(String serverAddress, int serverPort) {
         this.serverAddress = serverAddress;
@@ -34,13 +41,17 @@ public class Client {
         this.userInput = new BufferedReader(new InputStreamReader(System.in));
     }
 
+    // Important note, as we are using a try-with-resources block, if anything fails, the resources section is freed!
+    // This will lead to some exceptions being caught because they are null. This is not a bad thing, it just means
+    // I need to add Object != null statements.
     public void connect() {
         try (Socket socket = new Socket(serverAddress, serverPort);
              BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
              PrintWriter writer = new PrintWriter(socket.getOutputStream(), true)) {
 
             this.serverReader = reader;
-            this.writer = writer;
+            this.clientWriter = writer;
+            this.serverListener = new ServerListener(this.serverReader);
 
             // Attempt to authenticate with the server
             if (!authenticate()) {
@@ -51,18 +62,18 @@ public class Client {
             // If we successfully connected to the server continue to process the user commands
             System.out.println("Connected to the café. Type 'exit' to leave the café.");
 
+            // Start the serverListener on a new thread after authentication
+            SLThread = new Thread(serverListener);
+            SLThread.start();
 
             // process user commands
             String input;
-            while ((input = userInput.readLine()) != null) {
+            while ( (input = userInput.readLine()) != null) {
                 writer.println(input);
 
                 if ("exit".equalsIgnoreCase(input)) {
                     break;
                 }
-
-                String response = reader.readLine();
-                System.out.println("Server response: " + response);
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -82,7 +93,7 @@ public class Client {
             String hashedResponse = calculateHash(hashInput);
 
             // Send the hashed response back to the server
-            writer.println(hashedResponse);
+            clientWriter.println(hashedResponse);
 
             // The server will verify the response
 
@@ -100,16 +111,14 @@ public class Client {
         return Base64.getEncoder().encodeToString(hash);
     }
 
-    private String askForMenu() {
-        String line1 = new String();
-        String line2 = new String();
-        String line3 = new String();
-        return (line1 + line2 + line3);
-    }
-
+    // Slight issue, we actually can't ever write to the server if the clientWriter is closed due to the socket being
+    // freed in the try-with-resources blocks.
     public void closeClient() {
         // Inform server we are leaving. Just going with the default case that we exit (this should remove the orders)
-        writer.println("exit");
+        clientWriter.println("exit");
+        if (SLThread != null){
+            SLThread.interrupt();
+        }
         // Inform the user that we have closed.
         System.out.println("Client closed.");
     }
