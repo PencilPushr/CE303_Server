@@ -59,6 +59,7 @@ public class Brewery implements Runnable {
                 numTeasWaiting.setPlain(numTeasWaiting.get() + order.getTeaCount());
                 numCoffeesWaiting.setPlain(numCoffeesWaiting.get() + order.getCoffeeCount());
 
+                handle.setCurrentStatus(customerStatus.WAITING);
                 // Send confirmation to client
                 handle.sendToClient("[BREWER] -> order exists already " + handle.getClientName()
                         + " - updated to: Tea(" + handle.getTea() + ") Coffee(" + handle.getCoffee() + ")");
@@ -72,6 +73,7 @@ public class Brewery implements Runnable {
         ho.order.waitingAreaCoffees = order.getCoffeeCount();
         handle.sendToClient("[BREWER] -> order received for "+ handle.getClientName() + " (" + handle.getTea() + " tea(s) " +
             handle.getCoffee() + " and coffee(s))" );
+        handle.setCurrentStatus(customerStatus.WAITING);
         statePrinter.run();
         orderQueue.add(ho);
     }
@@ -117,12 +119,14 @@ public class Brewery implements Runnable {
                 && numCoffeesTray.get() >= currentHandle.handle.getCoffee()) {
             //Send message to client that order has been completed;
             currentHandle.handle.sendToClient("Finished brewing: " + currentHandle.handle.getTea()
-                    + " Tea(s) " + currentHandle.handle.getCoffee() + " Coffee(s)" );
+                    + " Tea(s) " + currentHandle.handle.getCoffee() + " Coffee(s)");
             orderQueue.poll();
             resetTrayCount();
             resetClientDrinkCount();
+            currentHandle.handle.setCurrentStatus(customerStatus.IDLE);
             currentHandle = null;
             statePrinter.run();
+
         }
     }
 
@@ -164,10 +168,12 @@ public class Brewery implements Runnable {
     public String orderStatus(ClientHandler clientHandler) {
         for (var i : orderQueue) {
             if (i.handle.equals(clientHandler)) {
-
-                i.order.
+                return "Order Status for " + i.handle.getClientName() + '\n'
+                        + " - " + i.order.waitingAreaTeas + " Tea(s) and " + i.order.waitingAreaCoffees + " Coffee(s) in waiting area" + '\n'
+                        + " - " + i.order.trayAreaTeas + " Tea(s) and " + i.order.waitingAreaCoffees + " Coffee(s) in tray area";
             }
         }
+        return "No order found for " + clientHandler.getClientName();
     }
 
     public int getOrderQueueLength() {

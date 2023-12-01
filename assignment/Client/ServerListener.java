@@ -18,6 +18,7 @@ public class ServerListener implements Runnable {
     @Override
     public void run() {
         try {
+            // This will always throw an exception
             while (true) {
                 String msg = bufferedReader.readLine();
                 if (msg != null) {
@@ -33,7 +34,7 @@ public class ServerListener implements Runnable {
             e.printStackTrace();
         } finally {
             try {
-                bufferedReader.close();
+                if (bufferedReader != null) bufferedReader.close();
             } catch (IOException e) {
                 // Handle the exception or log it
                 e.printStackTrace();

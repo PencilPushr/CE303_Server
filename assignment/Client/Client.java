@@ -115,7 +115,12 @@ public class Client {
     // freed in the try-with-resources blocks.
     public void closeClient() {
         // Inform server we are leaving. Just going with the default case that we exit (this should remove the orders)
-        clientWriter.println("exit");
+        // TODO: This is dumb, the try-resource block would have destroyed itself by the time we attempt to write ("exit")
+        // a more intelligent way would be to ensure that WHILE a connection is valid we can send responses.
+        // luckily due to the structure of the brewery, the order is auto-discarded because of the structure
+        if (clientWriter != null) {
+            clientWriter.println("exit");
+        }
         if (SLThread != null){
             SLThread.interrupt();
         }

@@ -61,6 +61,10 @@ public class ClientHandler {
         writer.println(message);
     }
 
+    public void sendToClientAsMultiLine(String message) {
+        writer.print(message);
+    }
+
     public String receiveFromClient() throws IOException {
         return reader.readLine();
     }
@@ -79,5 +83,13 @@ public class ClientHandler {
 
     public void setCoffee(int coffee) {
         this.coffee = coffee;
+    }
+
+    public customerStatus getCurrentStatus() {
+        return currentStatus;
+    }
+
+    public void setCurrentStatus(customerStatus currentStatus) {
+        this.currentStatus = currentStatus;
     }
 }

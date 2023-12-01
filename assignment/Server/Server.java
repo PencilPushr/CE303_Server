@@ -1,5 +1,6 @@
 package assignment.Server;
 
+import assignment.Client.Client;
 import assignment.Common.*;
 
 import java.io.BufferedReader;
@@ -79,12 +80,15 @@ public class Server {
 
             clients.add(handler);
 
+            printServerStatus();
 
             // Process user requests ------------- Main Loop ---------------
             String request;
             while ( (request = reader.readLine()) != null) {
                 System.out.println("Received from client: " + handler.getClientName() + " -> " + request);
+                printServerStatus();
                 if (processRequest(request, handler)){
+                    printServerStatus();
                     clients.remove(handler);
                     return;
                 }
@@ -94,6 +98,7 @@ public class Server {
         } finally {
             closeClient(clientSocket);
             numClients.decrementAndGet(); // Decrease the client count after they leave.
+            printServerStatus();
         }
     }
 
@@ -147,7 +152,7 @@ public class Server {
         }
         // Check this case first cuz otherwise it's gonna be a pain trying to add more conditions to parseOrderString();
         if ("order status".equalsIgnoreCase(request) && (tokens.length == 2)) {
-            returnOrderStatusToClient(clientHandler.getWriter());
+            returnOrderStatusToClient(clientHandler);
             return false;
         }
         if (tokens[0].equalsIgnoreCase("order")) {
@@ -170,21 +175,9 @@ public class Server {
         clientHandler.sendToClient(str1);
     }
 
-    public void returnOrderStatusToClient(PrintWriter writer) {
-        String orderStatus = new String(" Placeholder ");
-        writer.println(orderStatus);
-    }
-
-    /*
-     * Goal of the function is that if a client exits for whatever reason we give anyone waiting for an order of the same
-     * quantity or break it up.
-     */
-    void checkAndPassOrdersToOtherClients() {
-
-    }
-
-    void throwAwayOrders() {
-
+    public void returnOrderStatusToClient(ClientHandler clientHandler) {
+        String orderStatus = brewery.orderStatus(clientHandler);
+        clientHandler.sendToClient(orderStatus);
     }
 
     private boolean authenticate(BufferedReader reader, PrintWriter writer) throws IOException {
@@ -240,12 +233,7 @@ public class Server {
                 System.out.println("Client connection closed.");
             }
         } catch (IOException e) {
-            throwAwayOrders();
             e.printStackTrace();
         }
-
-        // Once the client has successfully exited
-        // Attempt to pass on any orders
-        checkAndPassOrdersToOtherClients();
     }
 }
