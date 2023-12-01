@@ -120,13 +120,16 @@ public class Brewery implements Runnable {
             //Send message to client that order has been completed;
             currentHandle.handle.sendToClient("Finished brewing: " + currentHandle.handle.getTea()
                     + " Tea(s) " + currentHandle.handle.getCoffee() + " Coffee(s)");
+            if (currentHandle.handle != null) {
+                System.out.println("[BREWER] -> order delivered to " + currentHandle.handle.getClientName() + " (" + currentHandle.handle.getTea()
+                        + " Tea(s) " + currentHandle.handle.getCoffee() + " Coffee(s))");
+            }
             orderQueue.poll();
             resetTrayCount();
             resetClientDrinkCount();
             currentHandle.handle.setCurrentStatus(customerStatus.IDLE);
             currentHandle = null;
             statePrinter.run();
-
         }
     }
 
@@ -170,10 +173,31 @@ public class Brewery implements Runnable {
             if (i.handle.equals(clientHandler)) {
                 return "Order Status for " + i.handle.getClientName() + '\n'
                         + " - " + i.order.waitingAreaTeas + " Tea(s) and " + i.order.waitingAreaCoffees + " Coffee(s) in waiting area" + '\n'
-                        + " - " + i.order.trayAreaTeas + " Tea(s) and " + i.order.waitingAreaCoffees + " Coffee(s) in tray area";
+                        + " - " + getBrewingTeasCount(clientHandler) + " Tea(s) and " + getBrewingCoffeesCount(clientHandler) + " Coffee(s) currently being prepared" + '\n'
+                        + " - " + i.order.trayAreaTeas + " Tea(s) and " + i.order.trayAreaCoffees + " Coffee(s) in tray area";
             }
         }
-        return "No order found for " + clientHandler.getClientName();
+        return "[BREWER] -> No order found for " + clientHandler.getClientName();
+    }
+
+    public int getBrewingTeasCount(ClientHandler clientHandler) {
+        int count = 0;
+        for (int i = 0; i < brewingFor.length; i++) {
+            if (brewingFor[i] != null && brewingFor[i].equals(clientHandler) && i < numTeasBrewing.get()) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    public int getBrewingCoffeesCount(ClientHandler clientHandler) {
+        int count = 0;
+        for (int i = 0; i < brewingFor.length; i++) {
+            if (brewingFor[i] != null && brewingFor[i].equals(clientHandler) && i < numCoffeesBrewing.get()) {
+                count++;
+            }
+        }
+        return count;
     }
 
     public int getOrderQueueLength() {

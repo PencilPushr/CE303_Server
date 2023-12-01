@@ -152,6 +152,10 @@ public class Server {
         }
         // Check this case first cuz otherwise it's gonna be a pain trying to add more conditions to parseOrderString();
         if ("order status".equalsIgnoreCase(request) && (tokens.length == 2)) {
+            if (clientHandler.getCurrentStatus() == customerStatus.IDLE) {
+                clientHandler.sendToClient("No order issued yet for " + clientHandler.getClientName());
+                return false;
+            }
             returnOrderStatusToClient(clientHandler);
             return false;
         }
